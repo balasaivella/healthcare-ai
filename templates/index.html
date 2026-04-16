@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AI Emergency System</title>
+
+<style>
+body {
+    margin:0;
+    font-family:'Segoe UI', sans-serif;
+    color:white;
+    display:flex;
+    overflow-x:hidden;
+    overflow-y:auto; 
+}
+
+
+body::before {
+    content:"";
+    position:fixed;
+    width:100%;
+    height:100%;
+    background:url("/static/dna.gif") no-repeat center;
+    background-size:cover;
+    opacity:25;
+    z-index:-1;
+}
+
+/* Sidebar */
+#sidebar {
+    width:220px;
+    background:rgba(0,43,92,0.9);
+    padding:20px;
+    min-height:100vh;
+}
+
+#main {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding-bottom:40px;
+}
+
+/* Chat */
+#chatContainer {
+    width:90%;
+    max-width:800px;
+    background:rgba(0,0,0,0.6);
+    border-radius:20px;
+    margin-top:40px;
+    margin-bottom:40px;
+    overflow:hidden;
+}
+
+header {
+    background:linear-gradient(90deg,#007bff,#00c6ff);
+    padding:12px;
+    text-align:center;
+}
+
+/* Welcome */
+.welcome-box {
+    text-align: center;
+    padding: 15px;
+    margin: 10px;
+}
+
+.warning {
+    color: #ff4d4d;
+    font-weight: bold;
+}
+
+.ask-text {
+    font-size: 16px;
+    opacity: 0.9;
+}
+
+/* Chat box */
+#chatBox {
+    max-height:400px; 
+    overflow-y:auto;
+    padding:15px;
+    display:flex;
+    flex-direction:column;
+}
+
+/* Messages */
+.msg {
+    padding:10px;
+    margin:6px;
+    border-radius:10px;
+    max-width:70%;
+}
+
+.user {
+    align-self:flex-end;
+    background:#007bff;
+}
+
+.ai {
+    background:#222;
+}
+
+/* Risk colors */
+.high { background:red !important; }
+.medium { background:orange !important; }
+.low { background:green !important; }
+
+/* Input */
+#inputArea {
+    display:flex;
+    padding:10px;
+}
+
+input {
+    flex:1;
+    padding:10px;
+    border-radius:8px;
+    border:none;
+}
+
+button {
+    margin-left:5px;
+    padding:10px;
+    border:none;
+    border-radius:8px;
+    background:#005eb8;
+    color:white;
+    cursor:pointer;
+}
+
+button:hover {
+    background:#007bff;
+}
+</style>
+</head>
+
+<body>
+
+<div id="sidebar">
+<h2>🏥 Triage AI</h2>
+
+<select id="lang">
+<option value="en-US">English</option>
+<option value="hi-IN">Hindi</option>
+<option value="te-IN">Telugu</option>
+</select>
+
+<br><br>
+
+<button onclick="findHospital()">📍 Find Hospital</button>
+</div>
+
+<div id="main">
+
+<div id="chatContainer">
+<header>🚑 Emergency AI</header>
+
+<div class="welcome-box">
+    <h2>👋 Hi, I am Health Triage App (Prototype)</h2>
+
+    <div class="warning">
+        ⚠️ This system is for educational purposes only and does not replace a real doctor.
+    </div>
+
+    <p class="ask-text">How may I assist you today?</p>
+</div>
+
+<div id="chatBox"></div>
+
+<div id="inputArea">
+<input id="userInput" placeholder="Type or use mic...">
+
+<button onclick="sendMessage()">🧠 Diagnose</button>
+<button onclick="startVoice()">🎤</button>
+</div>
+
+</div>
+
+</div>
+
+<script>
+function speak(text){
+    let speech = new SpeechSynthesisUtterance(text);
+    speech.lang = document.getElementById("lang").value;
+    speech.rate = 0.9;
+    window.speechSynthesis.speak(speech);
+}
+
+function addMessage(text, type){
+    let msg=document.createElement("div");
+    msg.className="msg "+type;
+    msg.innerText=text;
+    document.getElementById("chatBox").appendChild(msg);
+    chatBox.scrollTop=chatBox.scrollHeight;
+}
+
+function showRisk(level){
+    let msg = document.createElement("div");
+    msg.className = "msg ai";
+
+    if(level === "HIGH"){
+        msg.classList.add("high");
+        msg.innerText = "🚨 HIGH RISK - CALL 108 IMMEDIATELY!";
+    }
+    else if(level === "MEDIUM"){
+        msg.classList.add("medium");
+        msg.innerText = "⚠️ MEDIUM RISK - Consult a doctor soon.";
+    }
+    else{
+        msg.classList.add("low");
+        msg.innerText = "✅ LOW RISK - Monitor symptoms.";
+    }
+
+    document.getElementById("chatBox").appendChild(msg);
+}
+
+function sendMessage(){
+    let input=document.getElementById("userInput");
+    let text=input.value.trim();
+    if(!text) return;
+
+    addMessage("You: "+text,"user");
+
+    fetch("/chat",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+            message:text,
+            language: document.getElementById("lang").value
+        })
+    })
+    .then(res=>res.json())
+    .then(data=>{
+        addMessage("AI: "+data.reply,"ai");
+        showRisk(data.level);
+        addMessage("👨‍⚕️ Doctor: " + data.doctor,"ai");
+        speak(data.reply);
+    });
+
+    input.value="";
+}
+
+function startVoice(){
+    let recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
+        alert("🎤 Listening...");
+    };
+
+    recognition.onresult = function(e){
+        let text = e.results[0][0].transcript;
+        document.getElementById("userInput").value = text;
+        sendMessage();
+    };
+
+    recognition.start();
+}
+
+document.getElementById("userInput").addEventListener("keydown", function(e){
+    if(e.key==="Enter"){
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+function findHospital(){
+    window.open("https://www.google.com/maps/search/hospital+near+me");
+}
+</script>
+
+</body>
+</html>
