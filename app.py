@@ -1,22 +1,26 @@
-
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import requests
 import os
 import uuid
 
 app = Flask(__name__)
+
+# Create audio folder if missing
 AUDIO_FOLDER = os.path.join("static", "audio")
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
 
+# API keys from Render environment variables
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-# Pick one ElevenLabs voice ID 
+# Voice IDs
+# You can change these later from your ElevenLabs dashboard
 VOICE_IDS = {
     "en-US": "EXAVITQu4vr4xnSDxMaL",
     "hi-IN": "EXAVITQu4vr4xnSDxMaL",
     "te-IN": "EXAVITQu4vr4xnSDxMaL"
 }
+
 
 def analyze_symptoms(user_input):
     text = user_input.lower()
@@ -24,12 +28,14 @@ def analyze_symptoms(user_input):
     high_keywords = [
         "chest pain", "can't breathe", "cannot breathe", "breathing difficulty",
         "shortness of breath", "unconscious", "severe bleeding", "heart attack",
-        "stroke", "seizure", "fainted", "fainting", "blood vomiting"
+        "stroke", "seizure", "fainted", "fainting", "blood vomiting",
+        "not able to breathe", "heavy bleeding", "collapsed"
     ]
 
     medium_keywords = [
         "headache", "fever", "vomiting", "stomach pain", "abdominal pain",
-        "body pain", "infection", "dizziness", "cough", "cold"
+        "body pain", "infection", "dizziness", "cough", "cold", "weakness",
+        "sore throat", "nausea"
     ]
 
     for word in high_keywords:
@@ -42,16 +48,21 @@ def analyze_symptoms(user_input):
 
     return "LOW", "General Doctor"
 
+
 def get_ai_reply(user_input, language_code, level):
-prompt = f"""
+    if not OPENROUTER_API_KEY:
+        return "AI key missing. Please set OPENROUTER_API_KEY."
+
+    prompt = f"""
 You are a medical triage assistant.
 
 IMPORTANT:
 - Respond ONLY in this language: {language_code}
-- If language is:
-  te-IN → reply in Telugu script
-  hi-IN → reply in Hindi
-  en-US → reply in English
+- If language is te-IN, reply only in Telugu script
+- If language is hi-IN, reply only in Hindi
+- If language is en-US, reply only in English
+- Do not mix languages
+- Do not use English when Telugu or Hindi is selected
 
 User symptoms: {user_input}
 Risk level: {level}
@@ -59,13 +70,9 @@ Risk level: {level}
 Rules:
 - Keep response short
 - Give simple first aid advice
-- If HIGH risk → urgent tone
-- DO NOT mix languages
-- DO NOT use English if Telugu/Hindi is selected
+- If HIGH risk, tell the user to get emergency help immediately
+- Do not claim a final diagnosis
 """
-
-    if not OPENROUTER_API_KEY:
-        return "AI key missing. Please set OPENROUTER_API_KEY."
 
     try:
         response = requests.post(
@@ -77,23 +84,34 @@ Rules:
             json={
                 "model": "openai/gpt-4o-mini",
                 "messages": [
-                    {"role": "system", "content": "You are a helpful medical triage assistant."},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system",
+                        "content": "You are a calm and helpful medical triage assistant."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
                 ]
             },
             timeout=45
         )
 
         data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+
+        if "choices" in data and len(data["choices"]) > 0:
+            return data["choices"][0]["message"]["content"].strip()
+        else:
+            return "⚠️ AI not responding properly."
 
     except Exception:
         if level == "HIGH":
-            return "This may be serious. Please call emergency services or go to the nearest hospital immediately."
+            return "This may be serious. Please seek emergency medical help immediately."
         elif level == "MEDIUM":
-            return "Please consult a doctor soon, rest, drink fluids, and monitor your symptoms."
+            return "Please consult a doctor soon and monitor your symptoms."
         else:
-            return "Please monitor your symptoms, rest, and seek care if they worsen."
+            return "Please rest, monitor your symptoms, and seek care if they worsen."
+
 
 def generate_tts_audio(text, language_code):
     if not ELEVENLABS_API_KEY:
@@ -127,19 +145,31 @@ def generate_tts_audio(text, language_code):
             with open(filepath, "wb") as f:
                 f.write(r.content)
             return f"/static/audio/{filename}"
-        return None
+        else:
+            return None
     except Exception:
         return None
+
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
+
     user_input = data.get("message", "").strip()
     language = data.get("language", "en-US")
+
+    if not user_input:
+        return jsonify({
+            "reply": "Please enter your symptoms.",
+            "level": "LOW",
+            "doctor": "General Doctor",
+            "audio_url": None
+        })
 
     level, doctor = analyze_symptoms(user_input)
     ai_reply = get_ai_reply(user_input, language, level)
@@ -151,6 +181,7 @@ def chat():
         "doctor": doctor,
         "audio_url": audio_url
     })
+
 
 if __name__ == "__main__":
     app.run(debug=True)
