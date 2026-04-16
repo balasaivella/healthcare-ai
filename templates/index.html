@@ -13,7 +13,6 @@ body {
     overflow-y:auto; 
 }
 
-
 body::before {
     content:"";
     position:fixed;
@@ -180,13 +179,47 @@ button:hover {
 </div>
 
 <script>
+//  Speak Function (FIXED)
 function speak(text){
-    let speech = new SpeechSynthesisUtterance(text);
-    speech.lang = document.getElementById("lang").value;
-    speech.rate = 0.9;
-    window.speechSynthesis.speak(speech);
+    const lang = document.getElementById("lang").value;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+
+    const voices = speechSynthesis.getVoices();
+
+    let selectedVoice = voices.find(v => v.lang === lang);
+
+    if(!selectedVoice){
+        const shortLang = lang.split("-")[0];
+        selectedVoice = voices.find(v => v.lang.startsWith(shortLang));
+    }
+
+    if(!selectedVoice){
+        selectedVoice = voices.find(v => v.lang === "en-US");
+    }
+
+    if(selectedVoice){
+        utterance.voice = selectedVoice;
+    }
+
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
 }
 
+//  Fix Chrome voice loading
+let voicesLoaded = false;
+speechSynthesis.onvoiceschanged = () => {
+    if (!voicesLoaded) {
+        speechSynthesis.getVoices();
+        voicesLoaded = true;
+    }
+};
+
+//  Add message
 function addMessage(text, type){
     let msg=document.createElement("div");
     msg.className="msg "+type;
@@ -195,6 +228,7 @@ function addMessage(text, type){
     chatBox.scrollTop=chatBox.scrollHeight;
 }
 
+// 🚨 Risk display
 function showRisk(level){
     let msg = document.createElement("div");
     msg.className = "msg ai";
@@ -215,6 +249,7 @@ function showRisk(level){
     document.getElementById("chatBox").appendChild(msg);
 }
 
+//  Send message
 function sendMessage(){
     let input=document.getElementById("userInput");
     let text=input.value.trim();
@@ -235,15 +270,18 @@ function sendMessage(){
         addMessage("AI: "+data.reply,"ai");
         showRisk(data.level);
         addMessage("👨‍⚕️ Doctor: " + data.doctor,"ai");
+
         speak(data.reply);
     });
 
     input.value="";
 }
 
+//  Voice input
 function startVoice(){
     let recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = "en-US";
+
+    recognition.lang = document.getElementById("lang").value;
 
     recognition.onstart = () => {
         alert("🎤 Listening...");
@@ -258,6 +296,7 @@ function startVoice(){
     recognition.start();
 }
 
+//  Enter key
 document.getElementById("userInput").addEventListener("keydown", function(e){
     if(e.key==="Enter"){
         e.preventDefault();
@@ -265,6 +304,7 @@ document.getElementById("userInput").addEventListener("keydown", function(e){
     }
 });
 
+//  Hospital finder
 function findHospital(){
     window.open("https://www.google.com/maps/search/hospital+near+me");
 }
