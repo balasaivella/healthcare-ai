@@ -1,20 +1,18 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import requests
 import os
 import uuid
+from google import genai
 
 app = Flask(__name__)
 
-# Create audio folder if missing
 AUDIO_FOLDER = os.path.join("static", "audio")
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
 
-# API keys from Render environment variables
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Voice IDs
-# You can change these later from your ElevenLabs dashboard
 VOICE_IDS = {
     "en-US": "EXAVITQu4vr4xnSDxMaL",
     "hi-IN": "EXAVITQu4vr4xnSDxMaL",
@@ -113,6 +111,42 @@ Rules:
             return "Please rest, monitor your symptoms, and seek care if they worsen."
 
 
+def translate_with_gemini(text, language_code):
+    if not GEMINI_API_KEY:
+        return text
+
+    if language_code == "en-US":
+        return text
+
+    language_name = {
+        "hi-IN": "Hindi",
+        "te-IN": "Telugu"
+    }.get(language_code, "English")
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        prompt = f"""
+Translate this emergency medical guidance into {language_name}.
+Keep it short, simple, and clear.
+Do not add new medical advice.
+Only translate.
+
+Text:
+{text}
+"""
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        return response.text.strip()
+
+    except Exception:
+        return text
+
+
 def generate_tts_audio(text, language_code):
     if not ELEVENLABS_API_KEY:
         return None
@@ -172,7 +206,10 @@ def chat():
         })
 
     level, doctor = analyze_symptoms(user_input)
-    ai_reply = get_ai_reply(user_input, language, level)
+
+    ai_reply_english = get_ai_reply(user_input, "en-US", level)
+    ai_reply = translate_with_gemini(ai_reply_english, language)
+
     audio_url = generate_tts_audio(ai_reply, language)
 
     return jsonify({
